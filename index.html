@@ -155,17 +155,26 @@ const ZOMBIES={
   runner:{name:"疾跑僵尸",  hp:80,  speed:34, dps:20, hatHP:0,   hat:null},
 };
 
+/* 刷怪模型：
+   - 持续“涓流”刷怪：前段每次 1~2 只（不同行），后段每次 3~4 只（最多 4 只同时），高级僵尸过半后增多
+   - “旗波” waves：特定时刻成批涌出（原版“一大波”的来源），每批最多 4 只同时、分批延后到场
+   - dur 为每关总时长（不变）；进度条按 dur 计算 */
 const LEVELS=[
-  {name:"第 1 关 · 后院初见", plants:["sunflower","peashooter"], startSun:150, skySun:true,
-   waves:[{t:8,z:{normal:1}},{t:21,z:{normal:2}},{t:33,z:{normal:3}},{t:44,z:{normal:4}},{t:53,z:{normal:6},final:true}]},
-  {name:"第 2 关 · 路障来袭", plants:["sunflower","peashooter","wallnut"], startSun:100, skySun:true,
-   waves:[{t:8,z:{normal:2}},{t:21,z:{normal:2,cone:1}},{t:33,z:{cone:2,normal:2}},{t:44,z:{normal:3,cone:2}},{t:53,z:{cone:3,normal:3}},{t:61,z:{cone:4,normal:5},final:true}]},
-  {name:"第 3 关 · 铁桶压境", plants:["sunflower","peashooter","wallnut","snowpea"], startSun:100, skySun:true,
-   waves:[{t:8,z:{normal:2,cone:1}},{t:21,z:{cone:2,normal:2}},{t:33,z:{bucket:1,normal:3}},{t:44,z:{bucket:2,cone:2}},{t:53,z:{bucket:2,cone:3,normal:3}},{t:61,z:{bucket:3,cone:3,normal:4},final:true}]},
-  {name:"第 4 关 · 疾影夜袭", plants:["sunflower","peashooter","wallnut","snowpea","cherry"], startSun:125, skySun:true,
-   waves:[{t:7,z:{runner:2,normal:1}},{t:19,z:{cone:2,runner:2}},{t:30,z:{bucket:2,runner:3}},{t:40,z:{cone:3,runner:3,normal:2}},{t:48,z:{bucket:3,cone:2,runner:3}},{t:55,z:{bucket:3,cone:4,runner:4},final:true}]},
-  {name:"第 5 关 · 决战黎明", plants:["sunflower","peashooter","wallnut","snowpea","cherry","repeater"], startSun:125, skySun:true,
-   waves:[{t:6,z:{normal:2,cone:2}},{t:20,z:{cone:3,runner:2}},{t:33,z:{bucket:2,cone:3}},{t:44,z:{runner:4,cone:4}},{t:54,z:{bucket:3,cone:4,normal:3}},{t:63,z:{bucket:4,cone:4,runner:4}},{t:71,z:{bucket:4,cone:5,runner:5}},{t:78,z:{bucket:5,cone:5,normal:6},final:true}]},
+  {name:"第 1 关 · 后院初见", plants:["sunflower","peashooter"], startSun:150, skySun:true, dur:60,
+   ztypes:["normal"], trickle:{gapFront:9, gapBack:4.5, frontMax:2, backMax:4},
+   waves:[{t:30,z:{normal:2}},{t:60,z:{normal:4},final:true}]},
+  {name:"第 2 关 · 路障来袭", plants:["sunflower","peashooter","wallnut"], startSun:100, skySun:true, dur:78,
+   ztypes:["normal","cone"], trickle:{gapFront:9, gapBack:4.5, frontMax:2, backMax:4},
+   waves:[{t:38,z:{normal:2,cone:1}},{t:78,z:{cone:3,normal:4},final:true}]},
+  {name:"第 3 关 · 铁桶压境", plants:["sunflower","peashooter","wallnut","snowpea"], startSun:100, skySun:true, dur:86,
+   ztypes:["normal","cone","bucket"], trickle:{gapFront:8.5, gapBack:4.2, frontMax:2, backMax:4},
+   waves:[{t:42,z:{cone:2,normal:2}},{t:86,z:{bucket:3,cone:3,normal:4},final:true}]},
+  {name:"第 4 关 · 疾影夜袭", plants:["sunflower","peashooter","wallnut","snowpea","cherry"], startSun:125, skySun:true, dur:82,
+   ztypes:["normal","cone","bucket","runner"], trickle:{gapFront:8, gapBack:4, frontMax:2, backMax:4},
+   waves:[{t:40,z:{cone:2,runner:2}},{t:82,z:{bucket:3,cone:4,runner:4},final:true}]},
+  {name:"第 5 关 · 决战黎明", plants:["sunflower","peashooter","wallnut","snowpea","cherry","repeater"], startSun:125, skySun:true, dur:96,
+   ztypes:["normal","cone","bucket","runner"], trickle:{gapFront:7.5, gapBack:3.8, frontMax:2, backMax:4},
+   waves:[{t:48,z:{normal:2,cone:3,runner:2}},{t:96,z:{bucket:4,cone:4,runner:5},final:true}]},
 ];
 
 /* ================= 存档 ================= */
@@ -279,6 +288,7 @@ function toggleMute(){
 function resetLevelState(){
   G.grid=[]; G.zombies=[]; G.peas=[]; G.suns=[]; G.fx=[];
   G.waveIdx=0; G.allSpawned=false; G.time=0; G.selected=null; G.shovel=false;
+  G.spawnTimer=6; G.spawnQueue=[];
   G.skySunTimer=5;
   for(let r=0;r<ROWS;r++) G.grid.push(new Array(COLS).fill(null));
   G.mowers=[];
@@ -366,11 +376,61 @@ function plantAt(type,row,col){
 function spawnSun(x,y,ty,fromFlower){
   G.suns.push({x,y,ty,vy:fromFlower?55:34,life:11,val:SUN_VALUE,phase:Math.random()*6.28,fly:null});
 }
-function spawnZombie(type){
-  const row=Math.floor(Math.random()*ROWS);
+function spawnZombie(type,row){
+  if(row===undefined) row=Math.floor(Math.random()*ROWS);
   const z=ZOMBIES[type];
   G.zombies.push({type,row,x:W+30+Math.random()*40,hp:z.hp,maxHp:z.hp,
     speed:z.speed,dps:z.dps,slowT:0,eat:null,anim:Math.random()*6.28});
+}
+/* 取 n 个互不相同的行（保证一批僵尸不会挤在同一行） */
+function pickDistinctRows(n){
+  const all=[...Array(ROWS).keys()];
+  for(let i=all.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [all[i],all[j]]=[all[j],all[i]]; }
+  return all.slice(0,n);
+}
+/* 按关卡可用僵尸 + 是否过半，加权挑选类型（过半后高级僵尸更多） */
+function pickType(lv,front){
+  const t=lv.ztypes;
+  const base={normal:1,cone:1,bucket:1,runner:1};
+  let total=0; const cand=[];
+  t.forEach(ty=>{
+    let wt=base[ty]||1;
+    if(front){
+      if(ty==="normal") wt*=3; else if(ty==="bucket") wt*=0.5; else if(ty==="runner") wt*=0.8;
+    }else{
+      if(ty==="cone") wt*=2; else if(ty==="bucket") wt*=2.5;
+      else if(ty==="runner") wt*=2.2; else if(ty==="normal") wt*=0.5;
+    }
+    cand.push({ty,wt}); total+=wt;
+  });
+  let r=Math.random()*total;
+  for(const c of cand){ if(r<c.wt) return c.ty; r-=c.wt; }
+  return t[0];
+}
+/* 旗波：总量按每批 4 只拆分，第 1 批立即到场、其余每批延后 1 秒（最多 4 只同时出现） */
+function spawnFlagWave(w){
+  const list=[];
+  Object.entries(w.z).forEach(([t,n])=>{ for(let i=0;i<n;i++) list.push(t); });
+  for(let i=list.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [list[i],list[j]]=[list[j],list[i]]; }
+  let batch=0;
+  for(let i=0;i<list.length;i+=4){
+    const chunk=list.slice(i,i+4);
+    const rows=pickDistinctRows(chunk.length);
+    chunk.forEach((ty,k)=>{
+      if(batch===0) spawnZombie(ty,rows[k]);
+      else G.spawnQueue.push({type:ty,row:rows[k],at:G.time+batch});
+    });
+    batch++;
+  }
+}
+/* 涓流：前段 1~2 只、后段 3~4 只，均分布在不同行 */
+function trickleBatch(lv){
+  const dur=lv.dur, front=G.time<dur/2;
+  const maxN=front?lv.trickle.frontMax:lv.trickle.backMax;
+  let n=front ? (Math.random()<0.3?2:1) : (Math.random()<0.5?4:3);
+  n=Math.min(n,maxN);
+  const rows=pickDistinctRows(n);
+  for(let k=0;k<n;k++) spawnZombie(pickType(lv,front),rows[k]);
 }
 function hitZombie(z,dmg,snow){
   z.hp-=dmg;
@@ -394,14 +454,31 @@ function update(dt){
   G.time+=dt;
   const lv=levelDef();
 
-  /* --- 波次 --- */
+  /* --- 刷怪：持续涓流 + 旗波 --- */
+  const dur=lv.dur;
   while(G.waveIdx<lv.waves.length && G.time>=lv.waves[G.waveIdx].t){
-    const w=lv.waves[G.waveIdx];
-    Object.entries(w.z).forEach(([t,n])=>{ for(let i=0;i<n;i++) spawnZombie(t); });
-    if(w.final){ flashText("🚩 最后一大波僵尸来袭！",W/2,200,"#ff7b6b",30,3); SFX.wave(); }
+    spawnFlagWave(lv.waves[G.waveIdx]);
+    if(lv.waves[G.waveIdx].final){ flashText("🚩 最后一大波僵尸来袭！",W/2,200,"#ff7b6b",30,3); SFX.wave(); }
     G.waveIdx++;
   }
-  if(G.waveIdx>=lv.waves.length) G.allSpawned=true;
+  /* 涓流：在总时长内按节奏刷出小股僵尸 */
+  if(G.time<dur){
+    G.spawnTimer-=dt;
+    if(G.spawnTimer<=0){
+      trickleBatch(lv);
+      const front=G.time<dur/2;
+      G.spawnTimer=(front?lv.trickle.gapFront:lv.trickle.gapBack)*(0.8+Math.random()*0.4);
+    }
+  }
+  /* 旗波分批延后到场的僵尸 */
+  if(G.spawnQueue.length){
+    G.spawnQueue=G.spawnQueue.filter(s=>{
+      if(G.time>=s.at){ spawnZombie(s.type,s.row); return false; }
+      return true;
+    });
+  }
+  /* 全部刷完判定：到达总时长且队列清空 */
+  if(G.time>=dur && G.spawnQueue.length===0) G.allSpawned=true;
 
   /* --- 天降阳光 --- */
   if(lv.skySun){
@@ -419,7 +496,7 @@ function update(dt){
     const def=PLANTS[pl.type];
     if(pl.type==="sunflower"){
       pl.timer+=dt;
-      if(pl.timer>=13.25){ pl.timer=0; spawnSun(cellCX(c)+28,cellCY(r)-20,cellCY(r)+18,true); }
+      if(pl.timer>=12){ pl.timer=0; spawnSun(cellCX(c)+28,cellCY(r)-20,cellCY(r)+18,true); }
     }else if(def.dmg){
       pl.fireT-=dt;
       const hasTarget=G.zombies.some(z=>!z.dead&&z.row===r&&z.x>GRID_X+c*CELL_W-10);
@@ -723,21 +800,23 @@ function render(){
     }
   });
 
-  /* 波次进度条 */
+  /* 波次进度条（仅右下角，长度 = 原长 1/3，按总时长 dur 计算） */
   if(G.scene==="play"){
     const lv=levelDef();
-    const last=lv.waves[lv.waves.length-1].t;
-    const bx=GRID_X+10, by=H-14, bw=W-GRID_X-30;
+    const dur=lv.dur;
+    const fullW=W-GRID_X-30;
+    const bw=fullW/3;
+    const bx=W-12-bw, by=H-14;
     ctx.fillStyle="rgba(0,0,0,.45)"; ctx.fillRect(bx-4,by-5,bw+8,10);
     ctx.fillStyle="#5d8a3c"; ctx.fillRect(bx,by-3,bw,6);
-    ctx.fillStyle="#ffd94d"; ctx.fillRect(bx,by-3,bw*Math.min(1,G.time/last),6);
-    lv.waves.forEach((w,i)=>{
-      const fx2=bx+bw*(w.t/last);
+    ctx.fillStyle="#ffd94d"; ctx.fillRect(bx,by-3,bw*Math.min(1,G.time/dur),6);
+    lv.waves.forEach(w=>{
+      const fx2=bx+bw*(w.t/dur);
       ctx.fillStyle=w.final?"#e74c3c":"#3f6f2a";
       ctx.fillRect(fx2-2,by-8,4,16);
     });
-    ctx.fillStyle="rgba(255,255,255,.85)"; ctx.font="11px sans-serif"; ctx.textAlign="left";
-    ctx.fillText(`第 ${Math.min(G.waveIdx+ (G.allSpawned?0:1), lv.waves.length)} / ${lv.waves.length} 波`,bx+2,by-14);
+    ctx.fillStyle="rgba(255,255,255,.85)"; ctx.font="11px sans-serif"; ctx.textAlign="right";
+    ctx.fillText(`第 ${Math.min(G.waveIdx+(G.allSpawned?0:1),lv.waves.length)} / ${lv.waves.length} 波`,bx+bw,by-14);
   }
 
   /* 鼠标跟随：植物幽灵 / 铲子 */
