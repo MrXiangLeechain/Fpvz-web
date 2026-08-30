@@ -717,6 +717,7 @@ $("btn-menu2").addEventListener("click",()=>{ G.scene="menu"; buildLevelGrid(); 
 
 /* ================= 启动 ================= */
 G.seedCd={};
+resetLevelState();        // 必须在首帧 render 前初始化 G.grid / G.mowers
 buildLevelGrid();
 showOverlay("ov-menu");
 requestAnimationFrame(loop);
