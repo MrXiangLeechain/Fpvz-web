@@ -139,10 +139,10 @@ const W=960, H=610;
 const SUN_VALUE=25;
 
 const PLANTS={
-  sunflower :{name:"向日葵",  emoji:"🌻", cost:50,  hp:80,  cd:7,  desc:"定期产出阳光"},
-  peashooter:{name:"豌豆射手",emoji:"🌱", cost:100, hp:100, cd:7,  dmg:20, rate:1.4, desc:"直线发射豌豆"},
-  wallnut   :{name:"坚果墙",  emoji:"🥜", cost:50,  hp:400, cd:20, desc:"高血量肉盾，挡住僵尸"},
-  snowpea   :{name:"寒冰射手",emoji:"🌱", cost:175, hp:100, cd:8,  dmg:20, rate:1.4, snow:true, badge:"❄", desc:"冰豌豆，减速僵尸"},
+  sunflower :{name:"向日葵",  emoji:"🌻", cost:50,  hp:80,  cd:0.85, desc:"定期产出阳光"},
+  peashooter:{name:"豌豆射手",emoji:"🌱", cost:100, hp:100, cd:1,    dmg:20, rate:1.4, desc:"直线发射豌豆"},
+  wallnut   :{name:"坚果墙",  emoji:"🥜", cost:50,  hp:400, cd:3.5,  desc:"高血量肉盾，挡住僵尸"},
+  snowpea   :{name:"寒冰射手",emoji:"🌱", cost:175, hp:100, cd:1.25, dmg:20, rate:1.4, snow:true, badge:"❄", desc:"冰豌豆，减速僵尸"},
   cherry    :{name:"樱桃炸弹",emoji:"🍒", cost:150, hp:999, cd:30, bomb:true, desc:"3×3 范围爆炸，一次性"},
   repeater  :{name:"双发射手",emoji:"🌿", cost:200, hp:100, cd:8,  dmg:20, rate:1.4, double:true, badge:"×2", desc:"一次连发两颗豌豆"},
 };
@@ -157,15 +157,15 @@ const ZOMBIES={
 
 const LEVELS=[
   {name:"第 1 关 · 后院初见", plants:["sunflower","peashooter"], startSun:150, skySun:true,
-   waves:[{t:6,z:{normal:1}},{t:18,z:{normal:2}},{t:32,z:{normal:3}},{t:46,z:{normal:4}},{t:60,z:{normal:6},final:true}]},
+   waves:[{t:8,z:{normal:1}},{t:21,z:{normal:2}},{t:33,z:{normal:3}},{t:44,z:{normal:4}},{t:53,z:{normal:6},final:true}]},
   {name:"第 2 关 · 路障来袭", plants:["sunflower","peashooter","wallnut"], startSun:100, skySun:true,
-   waves:[{t:6,z:{normal:2}},{t:20,z:{normal:2,cone:1}},{t:36,z:{cone:2,normal:2}},{t:50,z:{normal:3,cone:2}},{t:64,z:{cone:3,normal:3}},{t:78,z:{cone:4,normal:5},final:true}]},
+   waves:[{t:8,z:{normal:2}},{t:21,z:{normal:2,cone:1}},{t:33,z:{cone:2,normal:2}},{t:44,z:{normal:3,cone:2}},{t:53,z:{cone:3,normal:3}},{t:61,z:{cone:4,normal:5},final:true}]},
   {name:"第 3 关 · 铁桶压境", plants:["sunflower","peashooter","wallnut","snowpea"], startSun:100, skySun:true,
-   waves:[{t:6,z:{normal:2,cone:1}},{t:22,z:{cone:2,normal:2}},{t:40,z:{bucket:1,normal:3}},{t:54,z:{bucket:2,cone:2}},{t:70,z:{bucket:2,cone:3,normal:3}},{t:86,z:{bucket:3,cone:3,normal:4},final:true}]},
+   waves:[{t:8,z:{normal:2,cone:1}},{t:21,z:{cone:2,normal:2}},{t:33,z:{bucket:1,normal:3}},{t:44,z:{bucket:2,cone:2}},{t:53,z:{bucket:2,cone:3,normal:3}},{t:61,z:{bucket:3,cone:3,normal:4},final:true}]},
   {name:"第 4 关 · 疾影夜袭", plants:["sunflower","peashooter","wallnut","snowpea","cherry"], startSun:125, skySun:true,
-   waves:[{t:5,z:{runner:2,normal:1}},{t:18,z:{cone:2,runner:2}},{t:34,z:{bucket:2,runner:3}},{t:50,z:{cone:3,runner:3,normal:2}},{t:66,z:{bucket:3,cone:2,runner:3}},{t:82,z:{bucket:3,cone:4,runner:4},final:true}]},
+   waves:[{t:7,z:{runner:2,normal:1}},{t:19,z:{cone:2,runner:2}},{t:30,z:{bucket:2,runner:3}},{t:40,z:{cone:3,runner:3,normal:2}},{t:48,z:{bucket:3,cone:2,runner:3}},{t:55,z:{bucket:3,cone:4,runner:4},final:true}]},
   {name:"第 5 关 · 决战黎明", plants:["sunflower","peashooter","wallnut","snowpea","cherry","repeater"], startSun:125, skySun:true,
-   waves:[{t:5,z:{normal:2,cone:2}},{t:16,z:{cone:3,runner:2}},{t:30,z:{bucket:2,cone:3}},{t:44,z:{runner:4,cone:4}},{t:58,z:{bucket:3,cone:4,normal:3}},{t:72,z:{bucket:4,cone:4,runner:4}},{t:84,z:{bucket:4,cone:5,runner:5}},{t:96,z:{bucket:5,cone:5,normal:6},final:true}]},
+   waves:[{t:6,z:{normal:2,cone:2}},{t:20,z:{cone:3,runner:2}},{t:33,z:{bucket:2,cone:3}},{t:44,z:{runner:4,cone:4}},{t:54,z:{bucket:3,cone:4,normal:3}},{t:63,z:{bucket:4,cone:4,runner:4}},{t:71,z:{bucket:4,cone:5,runner:5}},{t:78,z:{bucket:5,cone:5,normal:6},final:true}]},
 ];
 
 /* ================= 存档 ================= */
@@ -419,7 +419,7 @@ function update(dt){
     const def=PLANTS[pl.type];
     if(pl.type==="sunflower"){
       pl.timer+=dt;
-      if(pl.timer>=14){ pl.timer=0; spawnSun(cellCX(c)+28,cellCY(r)-20,cellCY(r)+18,true); }
+      if(pl.timer>=13.25){ pl.timer=0; spawnSun(cellCX(c)+28,cellCY(r)-20,cellCY(r)+18,true); }
     }else if(def.dmg){
       pl.fireT-=dt;
       const hasTarget=G.zombies.some(z=>!z.dead&&z.row===r&&z.x>GRID_X+c*CELL_W-10);
