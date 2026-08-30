@@ -91,7 +91,6 @@
     <div id="sun-box"><span class="big">☀ <span id="sun-count">100</span></span><span style="font-size:10px">阳光</span></div>
     <div id="seed-bar"></div>
     <button class="tool-btn" id="shovel-btn" title="铲子：移除植物">⛏</button>
-    <button class="tool-btn" id="mute-btn" title="音效开关（快捷键 M）">🔊</button>
     <button class="tool-btn" id="pause-btn" title="暂停">⏸</button>
   </div>
   <div id="stage">
@@ -128,7 +127,7 @@
       </div>
     </div>
   </div>
-  <div id="hint">鼠标：选卡/种植/收阳光 · 数字键 1~6 快速选卡 · 右键或 Esc 取消选择 · 空格暂停 · <b>M 键</b> 开关音效 · 进度自动保存在浏览器</div>
+  <div id="hint">鼠标：选卡/种植/收阳光 · 数字键 1~6 快速选卡 · 右键或 Esc 取消选择 · 空格暂停 · 进度自动保存在浏览器</div>
 </div>
 
 <script>
@@ -170,11 +169,8 @@ const LEVELS=[
 
 /* ================= 存档 ================= */
 const SAVE_KEY="pvzWebProgress";
-const MUTE_KEY="pvzWebMuted";
 function loadProgress(){ try{ return Math.max(1, parseInt(localStorage.getItem(SAVE_KEY)||"1",10)||1); }catch(e){ return 1; } }
 function saveProgress(unlocked){ try{ localStorage.setItem(SAVE_KEY, String(unlocked)); }catch(e){} }
-function loadMuted(){ try{ return localStorage.getItem(MUTE_KEY)==="1"; }catch(e){ return false; } }
-function saveMuted(m){ try{ localStorage.setItem(MUTE_KEY, m?"1":"0"); }catch(e){} }
 
 /* ================= 全局状态 ================= */
 const cvs=document.getElementById("game");
@@ -189,92 +185,7 @@ const G={
   selected:null, shovel:false,
   skySunTimer:6, mouse:{x:-99,y:-99},
   lastSunShown:-1, progress:loadProgress(),
-  muted:loadMuted(),
 };
-
-/* ================= 音效：Web Audio 实时合成，零外部文件 ================= */
-let AC=null;
-function audioInit(){
-  if(AC) return AC;
-  try{
-    const Ctx=window.AudioContext||window.webkitAudioContext;
-    AC = Ctx ? new Ctx() : null;
-  }catch(e){ AC=null; }
-  return AC;
-}
-function audioResume(){
-  const ac=audioInit();
-  if(ac && ac.state==="suspended") ac.resume();
-}
-/* 单音：freq 起始频率，slideTo 终止频率（做滑音），delay 延迟播放 */
-function tone(freq,dur,type,vol,slideTo,delay){
-  const ac=audioInit();
-  if(!ac || G.muted || !freq) return;
-  try{
-    const t0=ac.currentTime+(delay||0);
-    const osc=ac.createOscillator(), g=ac.createGain();
-    osc.type=type||"sine";
-    osc.frequency.setValueAtTime(freq,t0);
-    if(slideTo) osc.frequency.exponentialRampToValueAtTime(Math.max(20,slideTo),t0+dur);
-    g.gain.setValueAtTime(0.0001,t0);
-    g.gain.exponentialRampToValueAtTime(vol||0.15,t0+0.012);
-    g.gain.exponentialRampToValueAtTime(0.0001,t0+dur);
-    osc.connect(g); g.connect(ac.destination);
-    osc.start(t0); osc.stop(t0+dur+0.03);
-  }catch(e){}
-}
-/* 噪声爆音：爆炸、死亡音的质感 */
-function noiseBurst(dur,vol,cutoff){
-  const ac=audioInit();
-  if(!ac || G.muted) return;
-  try{
-    const len=Math.max(1,Math.floor(ac.sampleRate*dur));
-    const buf=ac.createBuffer(1,len,ac.sampleRate);
-    const d=buf.getChannelData(0);
-    for(let i=0;i<len;i++) d[i]=(Math.random()*2-1)*Math.pow(1-i/len,1.6);
-    const src=ac.createBufferSource(); src.buffer=buf;
-    const g=ac.createGain(); g.gain.value=vol||0.2;
-    let node=src;
-    if(cutoff){
-      const f=ac.createBiquadFilter(); f.type="lowpass"; f.frequency.value=cutoff;
-      src.connect(f); node=f;
-    }
-    node.connect(g); g.connect(ac.destination);
-    src.start();
-  }catch(e){}
-}
-/* 高频音效节流：豌豆/啃食/命中每秒可能发生十几次，不节流会糊成噪音 */
-const sfxLast={};
-function sfxGap(key,ms){
-  const t=performance.now();
-  if(sfxLast[key] && t-sfxLast[key]<ms) return false;
-  sfxLast[key]=t; return true;
-}
-const SFX={
-  plant (){ tone(430,0.13,"triangle",0.17,720); },
-  sun   (){ tone(880,0.10,"sine",0.13,1320); tone(1320,0.08,"sine",0.07,null,0.045); },
-  shoot (){ if(sfxGap("shoot",90))  tone(240,0.05,"square",0.045,150); },
-  hit   (){ if(sfxGap("hit",70))    tone(170,0.05,"square",0.06,120); },
-  eat   (){ if(sfxGap("eat",420))   tone(130,0.07,"sawtooth",0.05,95); },
-  die   (){ if(sfxGap("die",90)){ tone(210,0.30,"sawtooth",0.12,70); noiseBurst(0.16,0.08,700); } },
-  boom  (){ noiseBurst(0.5,0.32,1000); tone(95,0.42,"sawtooth",0.20,38); },
-  wave  (){ [0,0.22,0.44].forEach((d,i)=>tone(330+i*60,0.18,"square",0.10,null,d)); },
-  win   (){ [523,659,784,1047].forEach((f,i)=>tone(f,0.20,"triangle",0.15,null,i*0.13)); },
-  lose  (){ [392,330,262,196].forEach((f,i)=>tone(f,0.30,"sawtooth",0.14,null,i*0.17)); },
-  click (){ if(sfxGap("click",40))  tone(700,0.045,"sine",0.07); },
-  mow   (){ tone(160,0.35,"square",0.10,600); },
-};
-function refreshMuteBtn(){
-  const b=$("mute-btn");
-  if(!b) return;
-  b.textContent=G.muted?"🔇":"🔊";
-  b.classList.toggle("sel",G.muted);
-}
-function toggleMute(){
-  G.muted=!G.muted; saveMuted(G.muted);
-  refreshMuteBtn();
-  if(!G.muted){ audioResume(); SFX.click(); }
-}
 
 function resetLevelState(){
   G.grid=[]; G.zombies=[]; G.peas=[]; G.suns=[]; G.fx=[];
@@ -361,7 +272,6 @@ function plantAt(type,row,col){
   G.sun-=p.cost;
   G.seedCd[type]=G.time+p.cd;
   G.selected=null; refreshSeedSel();
-  SFX.plant();
 }
 function spawnSun(x,y,ty,fromFlower){
   G.suns.push({x,y,ty,vy:fromFlower?55:34,life:11,val:SUN_VALUE,phase:Math.random()*6.28,fly:null});
@@ -378,12 +288,10 @@ function hitZombie(z,dmg,snow){
   if(z.hp<=0 && !z.dead){
     z.dead=true;
     G.fx.push({kind:"die",x:z.x,y:cellCY(z.row),t:0,dur:.9,emoji:"🧟",row:z.row});
-    SFX.die();
   }
 }
 function explode(cx,cy){
   G.fx.push({kind:"boom",x:cx,y:cy,t:0,dur:.6});
-  SFX.boom();
   const r0=Math.round((cy-GRID_Y)/CELL_H-0.5);
   G.zombies.forEach(z=>{
     if(Math.abs(z.row-r0)<=1 && Math.abs(z.x-cx)<=CELL_W*1.6) hitZombie(z,1800);
@@ -398,7 +306,7 @@ function update(dt){
   while(G.waveIdx<lv.waves.length && G.time>=lv.waves[G.waveIdx].t){
     const w=lv.waves[G.waveIdx];
     Object.entries(w.z).forEach(([t,n])=>{ for(let i=0;i<n;i++) spawnZombie(t); });
-    if(w.final){ flashText("🚩 最后一大波僵尸来袭！",W/2,200,"#ff7b6b",30,3); SFX.wave(); }
+    if(w.final) flashText("🚩 最后一大波僵尸来袭！",W/2,200,"#ff7b6b",30,3);
     G.waveIdx++;
   }
   if(G.waveIdx>=lv.waves.length) G.allSpawned=true;
@@ -426,10 +334,9 @@ function update(dt){
       if(hasTarget && pl.fireT<=0){
         pl.fireT=def.rate;
         G.peas.push({row:r,x:cellCX(c)+22,y:cellCY(r)-14,snow:!!def.snow,vx:420,dmg:def.dmg});
-        SFX.shoot();
         if(def.double) pl.shot2=.16;
       }
-      if(pl.shot2>0){ pl.shot2-=dt; if(pl.shot2<=0){ G.peas.push({row:r,x:cellCX(c)+22,y:cellCY(r)-14,snow:!!def.snow,vx:420,dmg:def.dmg}); SFX.shoot(); } }
+      if(pl.shot2>0){ pl.shot2-=dt; if(pl.shot2<=0){ G.peas.push({row:r,x:cellCX(c)+22,y:cellCY(r)-14,snow:!!def.snow,vx:420,dmg:def.dmg}); } }
     }else if(def.bomb){
       pl.fuse-=dt;
       if(pl.fuse<=0){ G.grid[r][c]=null; explode(cellCX(c),cellCY(r)); }
@@ -445,7 +352,6 @@ function update(dt){
       if(Math.abs(z.x-p.x)<26){
         hitZombie(z,p.dmg,p.snow);
         G.fx.push({kind:"hit",x:p.x,y:p.y,t:0,dur:.18,snow:p.snow});
-        SFX.hit();
         return false;
       }
     }
@@ -464,7 +370,6 @@ function update(dt){
     if(target){
       z.eat=target;
       target.hp-=z.dps*dt;
-      SFX.eat();
       if(target.hp<=0){
         G.fx.push({kind:"puff",x:cellCX(target.col),y:cellCY(target.row),t:0,dur:.5});
         G.grid[z.row][target.col]=null; z.eat=null;
@@ -477,7 +382,7 @@ function update(dt){
     /* 抵达最左：触发小推车 / 失败 */
     if(z.x<GRID_X+4){
       const m=G.mowers.find(m=>m.row===z.row);
-      if(m&&m.state==="idle"){ m.state="run"; SFX.mow(); }
+      if(m&&m.state==="idle") m.state="run";
       else if(z.x<GRID_X-40 && (!m || m.x>z.x)) return lose();
     }
   }
@@ -521,7 +426,6 @@ function win(){
     : `解锁新植物：${PLANTS[LEVELS[next].plants[LEVELS[next].plants.length-1]].emoji} ${PLANTS[LEVELS[next].plants[LEVELS[next].plants.length-1]].name}`;
   $("btn-next").style.display=G.level===LEVELS.length-1?"none":"";
   showOverlay("ov-result");
-  SFX.win();
 }
 function lose(){
   G.scene="lost";
@@ -529,7 +433,6 @@ function lose(){
   $("result-desc").textContent="别灰心，试试多种向日葵攒经济、前排坚果扛伤。";
   $("btn-next").style.display="none";
   showOverlay("ov-result");
-  SFX.lose();
 }
 function flashText(text,x,y,color,size,dur){
   G.fx.push({kind:"text",text,x,y,color,size:size||20,t:0,dur:dur||1.6});
@@ -569,9 +472,8 @@ function drawHat(z){
   ctx.restore();
 }
 function render(){
-  /* 全屏清屏（含草坪上方的条带，否则天降阳光会留下拖影） */
-  ctx.fillStyle="#2f4425"; ctx.fillRect(0,0,W,H);
   /* 草坪 */
+  ctx.fillStyle="#2f4425"; ctx.fillRect(0,0,GRID_X,H);           // 房子侧
   for(let r=0;r<ROWS;r++) for(let c=0;c<COLS;c++){
     ctx.fillStyle=(r+c)%2===0?"#7bbf4f":"#6eae45";
     ctx.fillRect(GRID_X+c*CELL_W,GRID_Y+r*CELL_H,CELL_W,CELL_H);
@@ -579,20 +481,17 @@ function render(){
   ctx.strokeStyle="rgba(0,0,0,.08)"; ctx.lineWidth=1;
   for(let c=0;c<=COLS;c++){ ctx.beginPath(); ctx.moveTo(GRID_X+c*CELL_W,GRID_Y); ctx.lineTo(GRID_X+c*CELL_W,GRID_Y+ROWS*CELL_H); ctx.stroke(); }
 
-  /* 房子车道（最左侧专属区域）——整段 save/restore，防止半透明 fillStyle 外泄 */
-  ctx.save();
+  /* 房子车道（最左侧专属区域） */
   ctx.fillStyle="#3a2c1c"; ctx.fillRect(0,0,GRID_X,H);
   ctx.fillStyle="rgba(255,255,255,.04)";
   for(let r=0;r<ROWS;r++) ctx.fillRect(0,GRID_Y+r*CELL_H,GRID_X,CELL_H);
   ctx.strokeStyle="rgba(0,0,0,.25)"; ctx.lineWidth=1;
   for(let r=0;r<=ROWS;r++){ ctx.beginPath(); ctx.moveTo(0,GRID_Y+r*CELL_H); ctx.lineTo(GRID_X,GRID_Y+r*CELL_H); ctx.stroke(); }
   ctx.font="40px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-  ctx.fillStyle="#000";
   ctx.fillText("🏠",GRID_X/2,GRID_Y+58);
   ctx.font="12px sans-serif"; ctx.fillStyle="rgba(255,235,180,.75)";
   ctx.fillText("你 家",GRID_X/2,GRID_Y+104);
   ctx.fillText("↑ 守住",GRID_X/2,GRID_Y+130);
-  ctx.restore();
 
   /* 悬停格高亮（常驻，进入游戏即显示） */
   if(G.scene==="play"){
@@ -602,10 +501,8 @@ function render(){
       let col = G.shovel&&occ ? "rgba(255,90,80,.28)"
               : G.selected ? (occ?"rgba(255,150,150,.18)":"rgba(255,255,180,.22)")
               : "rgba(255,255,255,.10)";
-      ctx.save();
       ctx.fillStyle=col;
       ctx.fillRect(GRID_X+cell.col*CELL_W,GRID_Y+cell.row*CELL_H,CELL_W,CELL_H);
-      ctx.restore();
     }
   }
 
@@ -618,7 +515,6 @@ function render(){
     const def=PLANTS[pl.type];
     const x=cellCX(c), y=cellCY(r)+8;
     ctx.font="54px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillStyle="#000";          /* emoji 用自身颜色，避免沿用任何半透明 fillStyle */
     if(def.bomb && pl.fuse>0 && Math.floor(pl.fuse*8)%2===0){
       ctx.save(); ctx.translate(x,y); ctx.scale(1.22,1.22); ctx.fillText(def.emoji,0,0); ctx.restore();
     }else ctx.fillText(def.emoji,x,y);
@@ -646,40 +542,19 @@ function render(){
     ctx.save();
     if(z.slowT>0){ ctx.globalAlpha=.9; }
     ctx.font="50px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillStyle="#000";
     ctx.fillText("🧟",z.x,y);
     if(z.slowT>0){ ctx.fillStyle="rgba(120,190,255,.28)"; ctx.fillRect(z.x-26,y-34,52,68); }
     drawHat(z);
     if(z.eat){
-      ctx.font="14px serif"; ctx.fillStyle="#000"; ctx.fillText("😋",z.x-20,y-30);
+      ctx.font="14px serif"; ctx.fillText("😋",z.x-20,y-30);
     }
     ctx.restore();
-  });
-
-  /* 僵尸血条（头顶）：帽子护甲段用金属灰区分，体现"先掉帽子再掉血" */
-  G.zombies.forEach(z=>{
-    const def=ZOMBIES[z.type];
-    const bw=46, bh=5;
-    const bx=z.x-bw/2, by=cellCY(z.row)-48;
-    const frac=Math.max(0,Math.min(1,z.hp/z.maxHp));
-    ctx.fillStyle="rgba(0,0,0,.55)"; ctx.fillRect(bx-2,by-2,bw+4,bh+4);   // 描边
-    ctx.fillStyle="#4a4a4a";         ctx.fillRect(bx,by,bw,bh);           // 空槽
-    ctx.fillStyle=frac>.5?"#7ed321":frac>.25?"#f5a623":"#e74c3c";         // 本体血
-    ctx.fillRect(bx,by,bw*frac,bh);
-    if(def.hatHP){
-      const hatStart=Math.max(0,1-def.hatHP/z.maxHp);
-      if(frac>hatStart){
-        ctx.fillStyle="#b8c4cc";
-        ctx.fillRect(bx+bw*hatStart,by,bw*(frac-hatStart),bh);
-      }
-    }
   });
 
   /* 阳光 */
   G.suns.forEach(s=>{
     const bob=Math.sin(s.phase)*4;
     ctx.font="36px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-    ctx.fillStyle="#000";
     ctx.globalAlpha=s.life<2?s.life/2:1;
     ctx.fillText("☀️",s.x,s.y+bob);
     ctx.globalAlpha=1;
@@ -693,7 +568,6 @@ function render(){
       ctx.translate(f.x,f.y); ctx.rotate(k*1.5); ctx.font="50px serif";
       ctx.textAlign="center"; ctx.textBaseline="middle";
       ctx.filter="grayscale(1)";
-      ctx.fillStyle="#000";
       ctx.fillText(f.emoji,0,k*20);
       ctx.filter="none"; ctx.restore();
     }else if(f.kind==="boom"){
@@ -701,7 +575,6 @@ function render(){
       ctx.fillStyle=`rgba(255,${140-100*k},30,${.8-.8*k})`;
       ctx.beginPath(); ctx.arc(f.x,f.y,30+150*k,0,7); ctx.fill();
       ctx.font=(40+40*k)+"px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillStyle="#000";
       ctx.globalAlpha=1-k; ctx.fillText("💥",f.x,f.y);
       ctx.restore();
     }else if(f.kind==="hit"){
@@ -710,7 +583,6 @@ function render(){
     }else if(f.kind==="puff"){
       ctx.save(); ctx.globalAlpha=1-k; ctx.font="30px serif";
       ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillStyle="#000";
       ctx.fillText("💨",f.x,f.y-k*14); ctx.restore();
     }else if(f.kind==="text"){
       ctx.save(); ctx.globalAlpha=k<.15?k/.15:(1-k);
@@ -744,12 +616,10 @@ function render(){
   if(G.scene==="play"&&G.mouse.x>0){
     if(G.selected){
       ctx.globalAlpha=.75; ctx.font="48px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillStyle="#000";
       ctx.fillText(PLANTS[G.selected].emoji,G.mouse.x,G.mouse.y);
       ctx.globalAlpha=1;
     }else if(G.shovel){
       ctx.globalAlpha=.8; ctx.font="32px serif"; ctx.textAlign="center"; ctx.textBaseline="middle";
-      ctx.fillStyle="#000";
       ctx.fillText("⛏",G.mouse.x,G.mouse.y); ctx.globalAlpha=1;
     }
   }
@@ -790,12 +660,12 @@ function canvasPos(e){
 cvs.addEventListener("mousemove",e=>{ G.mouse=canvasPos(e); });
 cvs.addEventListener("mouseleave",()=>{ G.mouse={x:-99,y:-99}; });
 cvs.addEventListener("contextmenu",e=>{ e.preventDefault(); G.selected=null; G.shovel=false; refreshSeedSel(); });
-function onCanvasClick(e){
+cvs.addEventListener("click",e=>{
   if(G.scene!=="play") return;
   const pos=canvasPos(e);
   /* 1. 收阳光 */
   for(const s of G.suns){
-    if(!s.fly && Math.hypot(s.x-pos.x,s.y-pos.y)<34){ s.fly=true; SFX.sun(); return; }
+    if(!s.fly && Math.hypot(s.x-pos.x,s.y-pos.y)<34){ s.fly=true; return; }
   }
   const cell=cellAt(pos.x,pos.y);
   if(!cell) return;
@@ -816,10 +686,8 @@ function onCanvasClick(e){
     if(p.cost>G.sun){ flashText("阳光不足！",cellCX(cell.col),cellCY(cell.row)-30,"#ffb3b3",15,1); return; }
     plantAt(G.selected,cell.row,cell.col);
   }
-}
-cvs.addEventListener("click",onCanvasClick);
+});
 document.addEventListener("keydown",e=>{
-  if(e.key==="m"||e.key==="M"){ toggleMute(); return; }   /* 静音开关在任何场景都可用 */
   if(G.scene!=="play") { if(e.code==="Space") e.preventDefault(); return; }
   if(e.code==="Space"){ e.preventDefault(); togglePause(); }
   if(e.key==="Escape"){ G.selected=null; G.shovel=false; refreshSeedSel(); }
@@ -838,7 +706,6 @@ function togglePause(){
   else if(G.scene==="pause"){ G.scene="play"; showOverlay(null); }
 }
 $("pause-btn").addEventListener("click",togglePause);
-$("mute-btn").addEventListener("click",toggleMute);
 $("btn-start").addEventListener("click",startBattle);
 $("btn-back-menu").addEventListener("click",()=>{ G.scene="menu"; buildLevelGrid(); showOverlay("ov-menu"); });
 $("btn-resume").addEventListener("click",togglePause);
@@ -848,44 +715,10 @@ $("btn-next").addEventListener("click",()=>{ openIntro(Math.min(G.level+1,LEVELS
 $("btn-retry").addEventListener("click",()=>{ openIntro(G.level); startBattle(); });
 $("btn-menu2").addEventListener("click",()=>{ G.scene="menu"; buildLevelGrid(); showOverlay("ov-menu"); });
 
-/* pointerdown 延迟兜底：某些嵌入/预览环境会吞掉 click。
-   做法：pointerdown 先登记，若 250ms 内没有 click 到达，说明 click 被吞，再补触发一次。
-   正常环境下 click 会先到并取消兜底，因此不会双触发，也不影响快速连点。 */
-let pendingPtr=null;
-const CLICKABLE=".seed,.level-card,#btn-start,#btn-resume,#btn-restart,#btn-quit,#btn-next,#btn-retry,#btn-menu2,#btn-back-menu,#shovel-btn,#pause-btn";
-document.addEventListener("pointerdown",e=>{
-  const target=e.target;
-  if(e.button!==0 || !target || !target.closest) return;
-  const onCvs=!!target.closest("canvas#game");
-  const clickable=onCvs?null:target.closest(CLICKABLE);
-  if(!onCvs && !clickable) return;
-  if(pendingPtr) clearTimeout(pendingPtr.timer);
-  const x=e.clientX, y=e.clientY;
-  pendingPtr={
-    timer:setTimeout(function(){
-      pendingPtr=null;
-      if(onCvs) onCanvasClick({clientX:x, clientY:y});
-      else clickable.click();
-    },250)
-  };
-},true);
-document.addEventListener("click",function(){
-  if(pendingPtr){ clearTimeout(pendingPtr.timer); pendingPtr=null; }
-},true);
-
 /* ================= 启动 ================= */
 G.seedCd={};
 resetLevelState();        // 必须在首帧 render 前初始化 G.grid / G.mowers
 buildLevelGrid();
-refreshMuteBtn();         // 恢复上次的音效开关状态
-/* 浏览器自动播放策略：AudioContext 必须在首次用户交互后才能出声 */
-["pointerdown","keydown","touchstart"].forEach(ev=>document.addEventListener(ev,audioResume));
-/* 按钮点击音：统一在捕获阶段处理，不必逐个按钮改 */
-document.addEventListener("click",e=>{
-  audioResume();
-  const t=e.target;
-  if(t && t.closest && t.closest(".tool-btn,.btn")) SFX.click();
-},true);
 showOverlay("ov-menu");
 requestAnimationFrame(loop);
 </script>
